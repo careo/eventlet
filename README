@@ -1,10 +1,13 @@
 Port of Eventlet library for Ruby/EventMachine + fibers
     (c) 2009 Dane Jensen (careo)
 
+Well. Not literally a port. More like heavily inspired by both Eventlet and Stackless Python.
+
 Dependencies:
  * Bacon
 
 For more information see:
     http://wiki.secondlife.com/wiki/Eventlet/Documentation#Basic_usage
+    http://members.verizon.net/olsongt/stackless/why_stackless.html#tasklets
 
 License is the same as Ruby's.
