@@ -15,6 +15,7 @@ module Eventlets
   # 
   # This is similar to: http://stackless.com/wiki/Channels
   class Channel
+    attr_reader :senders, :receivers
     
     def initialize
       @senders = []
@@ -27,7 +28,7 @@ module Eventlets
         Eventlet.sleep
       else
         receiver = @receivers.pop
-        receiver.resume(*msg)
+        EM.next_tick { receiver.resume(*msg) }
       end
     end
     
@@ -65,10 +66,20 @@ if $0 == __FILE__
 
     it "should resume after another eventlet receives" do
       @receiver = Eventlet.spawn do
-        puts @channel.receive
+        @channel.receive
       end
-      EM.add_timer(0.2) {
+      EM.add_timer(0.1) {
         @sender.alive?.should == false
+        done
+      }
+    end
+
+    it "should have really sent the message to to the receiver" do
+      @receiver = Eventlet.spawn do
+        @message = @channel.receive
+      end
+      EM.add_timer(0.1) {
+        @message.should == :foo
         done
       }
     end
@@ -80,48 +91,109 @@ if $0 == __FILE__
     before do
       @channel = Channel.new
       @receiver = Eventlet.spawn do
-        puts @channel.receive
+        @message = @channel.receive
       end
     end
     
-    #it "should sleep" do
-    #  @receiver.alive?.should == true
-    #  done
-    #end
+    it "should sleep" do
+      @receiver.alive?.should == true
+      done
+    end
     
     it "should resume after another eventlet sends" do
       @sender = Eventlet.spawn do
-        @channel.send(1)
+        @channel.send(:foo)
       end
+      @receiver.alive?.should == true
       @sender.alive?.should == true
-      @receiver.alive?.should == false
-      EM.add_timer(0.2) {
-        @sender.alive?.should == true
+
+      EM.add_timer(0.1) {
+        @sender.alive?.should == false
+        @receiver.alive?.should == false
         done
       }
     end
-    
+
+    it "should receive the message after another eventlet sends" do
+      @sender = Eventlet.spawn do
+        @channel.send(:foo)
+      end
+
+      EM.add_timer(0.1) {
+        @message.should == :foo
+        done
+      }
+    end
   
   end
 
-  #EventMachine.describe "An Eventlet sending on a Channel with a receiver" do
-  #
-  #  it "should immediately pass control to the receiver" do
-  #  end
-  #  
-  #  it "should regain control when the receiver finishes" do
-  #  end
-  #
-  #end
-  #
-  #
-  #  If one co-routine calls send(), it is unscheduled until another 
-  #  #   co-routine calls receive().
-  #
-  #  it "should "
-  #
-  #
-  #end
-  
-  
+  EventMachine.describe "A pair of eventlets taking turns playing ping-pong" do
+    
+    before do
+      @channel = Channel.new
+      @pinger = Eventlet.spawn do
+        pings = [:ping_one, :ping_two, :ping_three, :pang]
+        pings.each do |ping|
+          @channel.send ping
+          pong = @channel.receive
+        end
+      end
+      @ponger = Eventlet.spawn do
+        pongs = [:pong_one, :pong_two, :pong_three, :pang]
+        pongs.each do |pong|
+          ping = @channel.receive
+          @channel.send pong
+        end
+      end
+    end
+    
+    it "should exchange messages back and forth" do
+      EM.add_timer(0.1) {
+        # the only way I can think to test this is by just ensuring neither of the dudes is hung
+        # waiting on the other.
+        @pinger.alive?.should == false
+        @ponger.alive?.should == false
+        # and that the channel is clear
+        @channel.senders.empty?.should == true
+        @channel.receivers.empty?.should == true
+        done
+      }
+    end
+  end
+
+  EventMachine.describe "A pair of eventlets both trying to ping before someone pongs" do
+    
+    before do
+      @channel = Channel.new
+      @pinger = Eventlet.spawn do
+        pings = [:ping_one, :ping_two, :ping_three, :pang]
+        pings.each do |ping|
+          @channel.send ping
+          pong = @channel.receive
+        end
+      end
+      @ponger = Eventlet.spawn do
+        pongs = [:pong_one, :pong_two, :pong_three, :pang]
+        pongs.each do |pong|
+          @channel.send pong
+          ping = @channel.receive
+        end
+      end
+    end
+    
+    it "should never end (aka: Dane hasn't added deadlock prevention)" do
+      EM.add_timer(0.1) {
+        # the only way I can think to test this is by just ensuring that both these
+        # dudes are stuck waiting for something to happen
+        @pinger.alive?.should == true
+        @ponger.alive?.should == true
+        # and the channel has two things stuck waiting
+        @channel.senders.empty?.should == false
+        @channel.receivers.empty?.should == true
+        done
+      }
+    end
+  end
+
+
 end

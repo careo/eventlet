@@ -67,8 +67,8 @@ module Eventlets
     end
 
     # resumes a given eventlet immediately, passing control to it.
-    def resume
-      @fiber.resume
+    def resume(*args)
+      @fiber.resume(*args)
     end
   
   end #Eventlet
