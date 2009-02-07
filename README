@@ -1,0 +1,7 @@
+Port of Eventlet library for Ruby/EventMachine + fibers
+    (c) 2009 Dane Jensen (careo)
+
+For more information see:
+    http://wiki.secondlife.com/wiki/Eventlet/Documentation#Basic_usage
+    
+License is the same as Ruby's.
