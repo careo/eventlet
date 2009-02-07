@@ -3,9 +3,13 @@ Port of Eventlet library for Ruby/EventMachine + fibers
 
 Well. Not literally a port. More like heavily inspired by both Eventlet and Stackless Python.
 
+It uses Fibers as the 'greenlets' or 'tasklets', and the EventMachine to handle the scheduling.
+
 Dependencies:
+ * EventMachine
  * Bacon
 
+ 
 For more information see:
     http://wiki.secondlife.com/wiki/Eventlet/Documentation#Basic_usage
     http://members.verizon.net/olsongt/stackless/why_stackless.html#tasklets
