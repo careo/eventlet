@@ -1,6 +1,7 @@
 require 'rubygems'
 require 'eventmachine'
 
+
 $:.unshift File.dirname(__FILE__)
 begin
   require 'fiber'
@@ -8,58 +9,74 @@ rescue LoadError
   require 'ext/fiber18'
 end
 
-
-class Eventlet
-
-  def initialize(&block)
-    @fiber = Fiber.new(&block)
-  end
-
-  # Create a new eventlet, or cooperative thread of control, within which
-  # to execute the +&block+. The block will be scheduled to run in the 
-  # next tick.
-  def self.spawn(&block)
-    e = self.new(&block)
-    EM.next_tick {
-      e.resume
-    }
-    e
-  end
-
-  # Create an eventlet and schedule it to be called after +duration+ seconds.
-  def self.call_after(duration,&blk)
-    e = self.new(&blk)
-    EM.add_timer(duration) {
-      e.resume
-    }
-    e
-  end
-    
-  # Yield control to another eventlet until at least +duration+ seconds.
-  # Calling sleep with a +duration+ of 0 or nil will put sleep the eventlet
-  # until resumed elsewhere.
-  def self.sleep(duration=nil)
-    f = Fiber.current
-    if duration && duration > 0
-      EM.add_timer(duration) {
-        f.resume
-      }
-    end
-    Fiber.yield
-  end
-
-  def alive?
-    @fiber.alive?
-  end
-
-  # resumes a given eventlet immediately, passing control to it.
-  def resume
-    @fiber.resume
-  end
+require 'eventlet/channel'
+module Eventlets
   
-end #Eventlet
+  class Eventlet
+    @@fibers = {}
+    
+    def initialize(&block)
+      @fiber = Fiber.new(&block)
+      # FIXME: this is a SUPER nasty hack to be able to do Eventlet.current
+      # by exploiting the existance of Fiber.current.
+      # it probably will also leak memory like a sieve.
+      @@fibers[@fiber] = self
+    end
 
+    # Create a new eventlet, or cooperative thread of control, within which
+    # to execute the +&block+. The block will be scheduled to run in the 
+    # next tick.
+    def self.spawn(&block)
+      e = self.new(&block)
+      EM.next_tick {
+        e.resume
+      }
+      e
+    end
+
+    # Create an eventlet and schedule it to be called after +duration+ seconds.
+    def self.call_after(duration,&blk)
+      e = self.new(&blk)
+      EM.add_timer(duration) {
+        e.resume
+      }
+      e
+    end
+    
+    # Yield control to another eventlet until at least +duration+ seconds.
+    # Calling sleep with a +duration+ of 0 or nil will put sleep the eventlet
+    # until resumed elsewhere.
+    def self.sleep(duration=nil)
+      f = Fiber.current
+      if duration && duration > 0
+        EM.add_timer(duration) {
+          f.resume
+        }
+      end
+      Fiber.yield
+    end
+
+    # FIXME: this abuses a SUPER nasty hack to work. so ugly.
+    def self.current
+      @@fibers[Fiber.current] || nil
+    end
+
+    def alive?
+      return true if @fiber.alive?
+      false
+    end
+
+    # resumes a given eventlet immediately, passing control to it.
+    def resume
+      @fiber.resume
+    end
+  
+  end #Eventlet
+
+end #Eventlets
 if $0 == __FILE__
+  include Eventlets
+  
   require 'ext/em/spec'
   
   EventMachine.describe "Eventlet" do
