@@ -1,8 +1,12 @@
 require File.dirname(__FILE__) + "/../eventlet"
 
-
 module Eventlet
   module API
+    
+    # A simple wrapper 
+    def eventlet(&blk)
+      Fiber.new(&blk)
+    end
     
     # spawn(function, *args, **keyword)
     #   Create a new coroutine, or cooperative thread of control, within which
@@ -12,13 +16,11 @@ module Eventlet
     #   caller immediately, and function will be called in a future main loop 
     #   iteration.
     def spawn(&blk)
-      f = Fiber.new {
-        blk.call
-      }
+      e = eventlet(&blk)
       EM.next_tick {
-        f.resume
+        e.resume
       }
-      f
+      e
     end
   
     # sleep(time)
@@ -29,11 +31,13 @@ module Eventlet
     #   is looping over a large list performing an expensive calculation without
     #   calling any socket methods, it’s a good idea to call sleep(0)
     #   occasionally; otherwise nothing else will run.
-    def sleep(time)
-      c = Fiber.current
-      EM.add_timer(time) {
-        c.resume
-      }
+    def sleep(time=nil)
+      f = Fiber.current
+      if time && time > 0
+        EM.add_timer(time) {
+          f.resume
+        }
+      end
       Fiber.yield
     end
 
@@ -43,12 +47,11 @@ module Eventlet
     #   desired. The function will be called with the given args and keyword
     #   arguments, and will be executed within the main loop’s coroutine.
     def call_after(time,&blk)
-      f = Fiber.new {
-        blk.call
-      }
+      e = eventlet(&blk)
       EM.add_timer(time) {
-        f.resume
+        e.resume
       }
+      e
     end
     
   end #API
@@ -76,7 +79,7 @@ if $0 == __FILE__
   end
 
   EventMachine.describe "sleep" do
-    it "should suspend the caller for a bit" do
+    it "should suspend and resume the caller if given a time " do
       start = Time.now
       f = Fiber.new {
         sleep(1)
@@ -86,6 +89,17 @@ if $0 == __FILE__
       EventMachine.add_timer(0.5) { f.alive?.should == true }
       EventMachine.add_timer(2) { f.alive?.should == false; done}
     end
+
+    it "should simply suspend the caller if not given a time " do
+      start = Time.now
+      f = Fiber.new {
+        sleep
+      }
+      f.resume
+      f.alive?.should == true
+      EventMachine.add_timer(0.5) { f.alive?.should == true; done }
+    end
+    
   end
 
   #EventMachine.describe "call_after" do
