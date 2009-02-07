@@ -60,7 +60,7 @@ if $0 == __FILE__
     end
     
     it "should sleep" do
-      @sender.alive?.should == true
+      @sender.should.be.alive?
       done
     end
 
@@ -69,7 +69,7 @@ if $0 == __FILE__
         @channel.receive
       end
       EM.add_timer(0.1) {
-        @sender.alive?.should == false
+        @sender.should.not.be.alive?
         done
       }
     end
@@ -96,7 +96,7 @@ if $0 == __FILE__
     end
     
     it "should sleep" do
-      @receiver.alive?.should == true
+      @receiver.should.be.alive?
       done
     end
     
@@ -104,12 +104,12 @@ if $0 == __FILE__
       @sender = Eventlet.spawn do
         @channel.send(:foo)
       end
-      @receiver.alive?.should == true
-      @sender.alive?.should == true
+      @receiver.should.be.alive?
+      @sender.should.be.alive?
 
       EM.add_timer(0.1) {
-        @sender.alive?.should == false
-        @receiver.alive?.should == false
+        @sender.should.not.be.alive?
+        @receiver.should.not.be.alive?
         done
       }
     end
@@ -151,8 +151,8 @@ if $0 == __FILE__
       EM.add_timer(0.1) {
         # the only way I can think to test this is by just ensuring neither of the dudes is hung
         # waiting on the other.
-        @pinger.alive?.should == false
-        @ponger.alive?.should == false
+        @pinger.should.not.be.alive?
+        @ponger.should.not.be.alive?
         # and that the channel is clear
         @channel.senders.empty?.should == true
         @channel.receivers.empty?.should == true
@@ -185,8 +185,8 @@ if $0 == __FILE__
       EM.add_timer(0.1) {
         # the only way I can think to test this is by just ensuring that both these
         # dudes are stuck waiting for something to happen
-        @pinger.alive?.should == true
-        @ponger.alive?.should == true
+        @pinger.should.be.alive?
+        @ponger.should.be.alive?
         # and the channel has two things stuck waiting
         @channel.senders.empty?.should == false
         @channel.receivers.empty?.should == true

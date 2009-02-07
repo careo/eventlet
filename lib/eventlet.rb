@@ -82,7 +82,7 @@ if $0 == __FILE__
   EventMachine.describe "Eventlet" do
     it "should create new Eventlets that are alive" do
       eventlet = Eventlet.new { puts 1 }
-      eventlet.alive?.should == true
+      eventlet.should.be.alive?
       done
     end
   end
@@ -106,11 +106,11 @@ if $0 == __FILE__
     it "should suspend and resume a duration " do
       start = Time.now
       e = Eventlet.spawn do
-        Eventlet.sleep(1)
+        Eventlet.sleep(0.1)
       end
-      e.alive?.should == true
-      EventMachine.add_timer(0.5) { e.alive?.should == true }
-      EventMachine.add_timer(2) { e.alive?.should == false; done}
+      e.should.be.alive?
+      EventMachine.next_tick { e.should.be.alive? }
+      EventMachine.add_timer(0.2) { e.should.not.be.alive?; done}
     end
 
     it "should simply suspend the caller if not given a time " do
@@ -118,27 +118,23 @@ if $0 == __FILE__
       e = Eventlet.spawn do
         Eventlet.sleep
       end
-      e.alive?.should == true
-      EventMachine.add_timer(0.5) { e.alive?.should == true; done }
+      e.should.be.alive?
+      EventMachine.add_timer(0.5) { e.should.be.alive?; done }
     end
-  
   end
 
-  #EventMachine.describe "call_after" do
-  #  it "should call the block after the specified time" do
-  #    Fiber.new {
-  #      start_at = Time.now
-  #      end_at = nil
-  #      call_after(1) {
-  #        end_at = Time.now
-  #      }
-  #      EventMachine.add_timer(1.5) {
-  #        (end_at - start_at).should < 1
-  #        done
-  #      }
-  #    }.resume
-  #  end
-  #
-  #end
+  EventMachine.describe "call_after" do
+    it "should come alive after the specified duration" do
+      start_at = Time.now
+      end_at = nil
+      e = Eventlet.call_after(0.2) {
+        end_at = Time.now
+      }
+      EventMachine.add_timer(0.5) {
+        (end_at - start_at).should.be < 0.3
+        done
+      }
+    end
+  end
 
 end
