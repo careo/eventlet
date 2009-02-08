@@ -18,6 +18,8 @@ module Eventlets
     attr_reader :senders, :receivers
     
     def initialize
+      # TODO: investigate using a deque and balance here instead of two
+      # arrays. Everyone else does, so why shouldn't I?
       @senders = []
       @receivers = []
     end
@@ -27,7 +29,7 @@ module Eventlets
         @senders.push [Eventlet.current,*msg]
         Eventlet.sleep
       else
-        receiver = @receivers.pop
+        receiver = @receivers.shift
         EM.next_tick { receiver.resume(*msg) }
       end
     end
@@ -37,7 +39,7 @@ module Eventlets
         @receivers << Eventlet.current
         Eventlet.sleep
       else
-        sender, message = @senders.pop
+        sender, message = @senders.shift
         EM.next_tick { sender.resume }
         return message
       end
@@ -195,5 +197,48 @@ if $0 == __FILE__
     end
   end
 
+  EventMachine.describe "Multiple senders with one receiver" do 
+
+    before do
+      @channel = Channel.new
+      1.upto(2) do |i|
+        puts "create sender"
+        Eventlet.spawn do
+          @channel.send i
+        end
+      end
+    end
+
+    it "should give the receiver both values in order" do
+      Eventlet.spawn do
+        @channel.receive.should == 1
+        @channel.receive.should == 2
+        done
+      end
+    end
+
+  end
+
+  EventMachine.describe "Multiple receivers with one sender" do 
+
+    before do
+      @channel = Channel.new
+    end
+
+    it "should ... work? should a test with a better name?" do
+      Eventlet.spawn do
+        @channel.send 1
+        @channel.send 2
+      end
+      Eventlet.spawn do 
+        @channel.receive.should == 1
+      end
+      Eventlet.spawn do
+        @channel.receive.should == 2
+        done
+      end
+    end
+
+  end
 
 end
