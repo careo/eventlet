@@ -2,46 +2,33 @@ require File.dirname(__FILE__) + "/../eventlet"
 
 module Eventlets
 
-  # A channel is a control flow primitive for co-routines. It is a 
-  # "thread-like" queue for controlling flow between two (or more) co-routines.
-  # The state model is:
-  # 
-  # * If one co-routine calls send(), it is unscheduled until another 
-  #   co-routine calls receive().
-  # * If one co-rounte calls receive(), it is unscheduled until another 
-  #   co-routine calls send().
-  # * Once a paired send()/receive() have been called, both co-routeines
-  #   are rescheduled.
-  # 
-  # This is similar to: http://stackless.com/wiki/Channels
-  class Channel
-    attr_reader :senders, :receivers
-    
+  # This is similar to a Channel, except that sending is asynchronous.
+  class AsyncChannel
+
     def initialize
       # TODO: investigate using a deque and balance here instead of two
       # arrays. Everyone else does, so why shouldn't I?
-      @senders = []
+      @queue = []
       @receivers = []
     end
-    
+
+    # Forwards +msg+ to the first waiting receiver
     def send(*msg)
       if @receivers.empty?
-        @senders.push [Eventlet.current,*msg]
-        Eventlet.sleep
+        @queue << msg
       else
         receiver = @receivers.shift
         EM.next_tick { receiver.resume(*msg) }
       end
     end
-    
+
     def receive
-      if @senders.empty?
+      if @queue.empty?
         @receivers << Eventlet.current
         Eventlet.sleep
       else
-        sender, message = @senders.shift
-        EM.next_tick { sender.resume }
-        return message
+        msg = @queue.shift
+        return *msg
       end
     end
 
@@ -51,27 +38,19 @@ end # Eventlet
 if $0 == __FILE__
   include Eventlets
   require 'ext/em/spec'
-  
+
   EventMachine.describe "An Eventlet sending on a Channel with no receiver" do
-    
+
     before do
-      @channel = Channel.new
+      @channel = AsyncChannel.new
       @sender = Eventlet.spawn do
         @channel.send(:foo)
       end
     end
-    
-    it "should sleep" do
-      @sender.should.be.alive?
-      done
-    end
 
-    it "should resume after another eventlet receives" do
-      @receiver = Eventlet.spawn do
-        @channel.receive
-      end
-      EM.add_timer(0.1) {
-        @sender.should.not.be.alive?
+    it "should not sleep" do
+      EM.next_tick {
+        @sender.should.not.be.alive? 
         done
       }
     end
@@ -87,27 +66,29 @@ if $0 == __FILE__
     end
 
   end
-  
+
   EventMachine.describe "An Eventlet receiving on a Channel with no sender" do
-    
+
     before do
-      @channel = Channel.new
+      @channel = AsyncChannel.new
       @receiver = Eventlet.spawn do
         @message = @channel.receive
       end
     end
-    
+
     it "should sleep" do
       @receiver.should.be.alive?
       done
     end
-    
+
     it "should resume after another eventlet sends" do
       @sender = Eventlet.spawn do
         @channel.send(:foo)
       end
-      @receiver.should.be.alive?
-      @sender.should.be.alive?
+      EM.next_tick {
+        @receiver.should.be.alive?
+        @sender.should.not.be.alive?
+      }
 
       EM.add_timer(0.1) {
         @sender.should.not.be.alive?
@@ -126,13 +107,13 @@ if $0 == __FILE__
         done
       }
     end
-  
+
   end
 
   EventMachine.describe "A pair of eventlets taking turns playing ping-pong" do
-    
+  
     before do
-      @channel = Channel.new
+      @channel = AsyncChannel.new
       @pinger = Eventlet.spawn do
         pings = [:ping_one, :ping_two, :ping_three, :pang]
         pings.each do |ping|
@@ -148,25 +129,22 @@ if $0 == __FILE__
         end
       end
     end
-    
-    it "should exchange messages back and forth" do
+  
+    it "should end with the first eventlet talking to itself, and the second blocking forever" do
       EM.add_timer(0.1) {
         # the only way I can think to test this is by just ensuring neither of the dudes is hung
         # waiting on the other.
         @pinger.should.not.be.alive?
-        @ponger.should.not.be.alive?
-        # and that the channel is clear
-        @channel.senders.empty?.should == true
-        @channel.receivers.empty?.should == true
+        @ponger.should.be.alive?
         done
       }
     end
   end
 
   EventMachine.describe "A pair of eventlets both trying to ping before someone pongs" do
-    
+
     before do
-      @channel = Channel.new
+      @channel = AsyncChannel.new
       @pinger = Eventlet.spawn do
         pings = [:ping_one, :ping_two, :ping_three, :pang]
         pings.each do |ping|
@@ -182,16 +160,13 @@ if $0 == __FILE__
         end
       end
     end
-    
-    it "should never end (aka: Dane hasn't added deadlock prevention)" do
+
+    it "should not deadlock" do
       EM.add_timer(0.1) {
         # the only way I can think to test this is by just ensuring that both these
-        # dudes are stuck waiting for something to happen
-        @pinger.should.be.alive?
-        @ponger.should.be.alive?
-        # and the channel has two things stuck waiting
-        @channel.senders.empty?.should == false
-        @channel.receivers.empty?.should == true
+        # dudes managed to get their messages off
+        @pinger.should.not.be.alive?
+        @ponger.should.not.be.alive?
         done
       }
     end
@@ -200,8 +175,8 @@ if $0 == __FILE__
   EventMachine.describe "Multiple senders with one receiver" do 
 
     before do
-      @channel = Channel.new
-      1.upto(2) do |i|
+      @channel = AsyncChannel.new
+      [:one,:two,:three].each do |i|
         Eventlet.spawn do
           @channel.send i
         end
@@ -210,8 +185,9 @@ if $0 == __FILE__
 
     it "should give the receiver both values in order" do
       Eventlet.spawn do
-        @channel.receive.should == 1
-        @channel.receive.should == 2
+        @channel.receive.should == :one
+        @channel.receive.should == :two
+        @channel.receive.should == :three
         done
       end
     end
@@ -221,19 +197,23 @@ if $0 == __FILE__
   EventMachine.describe "Multiple receivers with one sender" do 
 
     before do
-      @channel = Channel.new
+      @channel = AsyncChannel.new
     end
 
-    it "should ... work? should a test with a better name?" do
+    it "should have a test with a better name" do
       Eventlet.spawn do
-        @channel.send 1
-        @channel.send 2
+        @channel.send :one
+        @channel.send :two
+        @channel.send :three
       end
       Eventlet.spawn do 
-        @channel.receive.should == 1
+        @channel.receive.should == :one
       end
       Eventlet.spawn do
-        @channel.receive.should == 2
+        @channel.receive.should == :two
+      end
+      Eventlet.spawn do
+        @channel.receive.should == :three
         done
       end
     end
