@@ -10,6 +10,7 @@ rescue LoadError
 end
 
 require 'eventlet/channel'
+require 'eventlet/event'
 module Eventlets
   
   class Eventlet
